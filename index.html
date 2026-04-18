@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chao Ting Pro Selects | 專業攝影器材選物</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chao-ting-pro-selects';
+
+        const init = async () => {
+            try {
+                await signInAnonymously(auth);
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'main_data');
+                        onSnapshot(docRef, (docSnap) => {
+                            if (docSnap.exists()) {
+                                window.catalog = docSnap.data().catalog || [];
+                            } else {
+                                window.catalog = window.defaultData;
+                                window.save(false);
+                            }
+                            window.render();
+                        }, (error) => {
+                            console.error("Firestore Listen Error:", error);
+                        });
+                    }
+                });
+            } catch (e) { console.error("Firebase Auth Error", e); }
+        };
+
+        window.save = async (shouldRender = true) => {
+            if (!auth.currentUser) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'main_data');
+                await setDoc(docRef, { catalog: window.catalog });
+                if (shouldRender) window.render();
+            } catch (e) {
+                console.error("Save Error:", e);
+                alert("儲存失敗，可能是圖片檔案太大（建議壓縮後再上傳）。");
+            }
+        };
+
+        init();
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&family=Noto+Sans+TC:wght@300;400;700&display=swap');
+        
+        :root {
+            --nikon-gold: #FFE800;
+            --bg-dark: #080808;
+            --card-bg: #121212;
+            --border-color: #222222;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: var(--bg-dark);
+            color: #f0f0f0;
+            scroll-behavior: smooth;
+        }
+
+        .gold-text { color: var(--nikon-gold); }
+        .bg-gold { background-color: var(--nikon-gold); }
+        
+        .category-grid-item {
+            position: relative;
+            height: 280px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            transition: all 0.5s cubic-bezier(0.165, 0.84, 0.44, 1);
+            cursor: pointer;
+        }
+
+        .category-grid-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: grayscale(100%) brightness(50%);
+            transition: all 0.6s ease;
+        }
+
+        .category-grid-item:hover img {
+            filter: grayscale(0%) brightness(70%);
+            transform: scale(1.05);
+        }
+
+        .category-grid-item.active {
+            border-color: var(--nikon-gold);
+            box-shadow: 0 0 15px rgba(255, 232, 0, 0.2);
+        }
+
+        .category-grid-item.active img {
+            filter: grayscale(0%) brightness(80%);
+        }
+
+        .drag-handle {
+            cursor: move;
+            padding: 10px;
+            color: rgba(255, 255, 255, 0.3);
+            transition: color 0.2s;
+        }
+        .drag-handle:hover { color: var(--nikon-gold); }
+
+        .category-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        }
+
+        .item-list-container {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .item-list-container.active {
+            max-height: 5000px;
+        }
+
+        .list-item {
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s;
+            background: transparent;
+        }
+
+        .list-item:hover {
+            background: rgba(255, 232, 0, 0.03);
+        }
+
+        .sortable-ghost {
+            opacity: 0.1;
+            background: var(--nikon-gold) !important;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.95);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(8px);
+        }
+
+        .modal.active { display: flex; }
+
+        .admin-section {
+            background: #1a1a1a;
+            border: 1px dashed var(--nikon-gold);
+        }
+
+        .file-input-label {
+            display: inline-block;
+            background: #222;
+            color: #ccc;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .file-input-label:hover { background: #333; color: white; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
+</head>
+<body class="pb-20">
+
+    <!-- 管理員控制列 -->
+    <div id="admin-bar" class="sticky top-0 z-50 bg-zinc-900 border-b border-white/5 py-1 px-4 text-[10px] flex justify-between items-center">
+        <span class="text-gray-500 uppercase tracking-widest">Client Preview Mode</span>
+        <button onclick="toggleAdmin()" id="admin-btn" class="hover:text-white transition">
+            <i class="fa-solid fa-gears mr-1"></i> 切換後台管理
+        </button>
+    </div>
+
+    <!-- 標題 Header -->
+    <header class="max-w-7xl mx-auto px-6 pt-16 pb-12 text-center">
+        <h1 class="text-4xl md:text-5xl font-light tracking-[0.2em] uppercase mb-4">
+            Chao Ting <span class="font-bold gold-text">Pro Selects</span>
+        </h1>
+        <p class="text-gray-500 text-sm tracking-[0.3em] uppercase">Curated Gear & Professional Solutions</p>
+        <div class="w-12 h-[1px] bg-gold mx-auto mt-8"></div>
+    </header>
+
+    <!-- 類別選擇網格 -->
+    <section class="max-w-7xl mx-auto px-6 mb-12">
+        <div id="category-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <!-- JS 動態生成 -->
+        </div>
+    </section>
+
+    <!-- 細項列表容器 -->
+    <main class="max-w-5xl mx-auto px-6">
+        <div id="active-category-title" class="hidden mb-10 text-center">
+            <h2 class="text-2xl font-bold tracking-[0.2em] uppercase gold-text" id="selected-name">選項名稱</h2>
+            <p class="text-gray-500 text-[10px] uppercase tracking-widest mt-2">Selected Items List</p>
+        </div>
+        
+        <div id="items-container" class="item-list-container">
+            <!-- JS 動態生成 -->
+        </div>
+    </main>
+
+    <!-- 後台新增類別區 -->
+    <section id="admin-ui" class="max-w-5xl mx-auto px-6 mt-20 hidden">
+        <div class="admin-section p-8 rounded-lg">
+            <h2 class="text-lg font-bold mb-4 gold-text">後台系統：新增品項類別</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <input id="new-cat-name" type="text" placeholder="類別名稱 (如：鏡頭)" class="bg-black border border-zinc-800 p-3 rounded outline-none focus:border-gold">
+                <div class="flex flex-col gap-2">
+                    <label class="file-input-label text-center">
+                        <i class="fa-solid fa-upload mr-2"></i> 選擇封面圖片 (自電腦上傳)
+                        <input type="file" id="new-cat-file" class="hidden" accept="image/*">
+                    </label>
+                    <p id="file-name-display" class="text-[10px] text-zinc-500 italic text-center">尚未選擇檔案</p>
+                </div>
+            </div>
+            <button onclick="addCategory()" class="bg-gold text-black w-full py-3 rounded font-bold uppercase tracking-widest hover:bg-yellow-400 transition">建立類別</button>
+        </div>
+    </section>
+
+    <!-- 頁腳 -->
+    <footer class="mt-40 py-20 border-t border-white/5 text-center px-6">
+        <div class="text-gray-600 text-[10px] tracking-[.4em] uppercase">
+            Chao Ting Pro Selects © 2024<br>
+            <span class="mt-2 block text-zinc-800">Designed for professional photographers</span>
+        </div>
+    </footer>
+
+    <!-- 實拍彈窗 -->
+    <div id="photo-modal" class="modal" onclick="closeModal()">
+        <div class="relative max-w-4xl w-full p-4" onclick="event.stopPropagation()">
+            <img id="modal-img" src="" class="w-full h-auto max-h-[80vh] object-contain rounded shadow-2xl border border-white/10">
+            <p id="modal-caption" class="mt-4 text-center text-sm text-gray-400 font-light tracking-widest"></p>
+            <button onclick="closeModal()" class="absolute -top-10 right-0 text-white text-2xl hover:text-gold transition">&times;</button>
+        </div>
+    </div>
+
+    <!-- 隱藏的檔案選擇器 (用於編輯項目) -->
+    <input type="file" id="item-file-input" class="hidden" accept="image/*">
+
+    <script>
+        window.defaultData = [
+            {
+                id: "cat_camera",
+                name: "相機",
+                image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=800",
+                items: [
+                    { id: 101, name: "Nikon Z8", priceOrig: 125000, priceDeal: 108800, photo: "" }
+                ]
+            }
+        ];
+
+        window.catalog = [];
+        let isAdmin = false;
+        let activeCategoryId = null;
+        let gridSortable = null;
+        let listSortable = null;
+
+        // 輔助函式：將圖片檔案轉為 Base64
+        const fileToBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = error => reject(error);
+        });
+
+        // 監聽新增類別的檔案選擇
+        document.getElementById('new-cat-file')?.addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || "尚未選擇檔案";
+            document.getElementById('file-name-display').innerText = fileName;
+        });
+
+        window.toggleAdmin = () => {
+            isAdmin = !isAdmin;
+            document.getElementById('admin-ui').classList.toggle('hidden', !isAdmin);
+            document.getElementById('admin-bar').classList.toggle('bg-red-900', isAdmin);
+            document.getElementById('admin-btn').innerHTML = isAdmin 
+                ? '<i class="fa-solid fa-check mr-1"></i> 完成並儲存' 
+                : '<i class="fa-solid fa-gears mr-1"></i> 切換後台管理';
+            window.render();
+        };
+
+        window.selectCategory = (catId) => {
+            activeCategoryId = (activeCategoryId === catId) ? null : catId;
+            window.render();
+            if (activeCategoryId) {
+                setTimeout(() => {
+                    document.getElementById('active-category-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+            }
+        };
+
+        function initSortable() {
+            if (gridSortable) gridSortable.destroy();
+            if (listSortable) listSortable.destroy();
+            if (!isAdmin) return;
+
+            const gridEl = document.getElementById('category-grid');
+            gridSortable = new Sortable(gridEl, {
+                animation: 250,
+                handle: '.drag-handle',
+                onEnd: function (evt) {
+                    const movedItem = window.catalog.splice(evt.oldIndex, 1)[0];
+                    window.catalog.splice(evt.newIndex, 0, movedItem);
+                    window.save(false);
+                }
+            });
+
+            const listEl = document.getElementById('sortable-list');
+            if (listEl) {
+                listSortable = new Sortable(listEl, {
+                    animation: 200,
+                    handle: '.drag-handle-list',
+                    onEnd: function (evt) {
+                        const cat = window.catalog.find(c => c.id === activeCategoryId);
+                        if (cat) {
+                            const movedItem = cat.items.splice(evt.oldIndex, 1)[0];
+                            cat.items.splice(evt.newIndex, 0, movedItem);
+                            window.save(false);
+                        }
+                    }
+                });
+            }
+        }
+
+        window.render = () => {
+            const grid = document.getElementById('category-grid');
+            const listContainer = document.getElementById('items-container');
+            const titleSection = document.getElementById('active-category-title');
+            
+            grid.innerHTML = window.catalog.map(cat => `
+                <div data-id="${cat.id}" class="category-grid-item group ${activeCategoryId === cat.id ? 'active' : ''}">
+                    <img src="${cat.image || 'https://via.placeholder.com/800x600?text=No+Image'}" alt="${cat.name}">
+                    <div class="category-overlay" onclick="selectCategory('${cat.id}')">
+                        <span class="text-xs gold-text tracking-[0.4em] opacity-0 group-hover:opacity-100 transition-all mb-2">Explore</span>
+                        <h3 class="text-xl font-bold tracking-widest uppercase">${cat.name}</h3>
+                    </div>
+                    ${isAdmin ? `
+                        <div class="drag-handle absolute top-4 left-4 z-10 bg-black/50 p-2 rounded text-white"><i class="fa-solid fa-grip-vertical"></i></div>
+                        <div class="absolute bottom-4 right-4 z-10 flex gap-2">
+                            <button onclick="event.stopPropagation(); editCategory('${cat.id}')" class="text-[10px] bg-zinc-800 px-2 py-1 rounded">EDIT</button>
+                            <button onclick="event.stopPropagation(); deleteCategory('${cat.id}')" class="text-[10px] bg-red-900 px-2 py-1 rounded">DEL</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+
+            if (activeCategoryId) {
+                const selectedCat = window.catalog.find(c => c.id === activeCategoryId);
+                if (selectedCat) {
+                    document.getElementById('selected-name').innerText = selectedCat.name;
+                    titleSection.classList.remove('hidden');
+                    listContainer.classList.add('active');
+                    listContainer.innerHTML = `
+                        <div id="sortable-list" class="space-y-0 py-4">
+                            ${selectedCat.items.map(item => `
+                                <div class="list-item py-6 flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
+                                    <div class="flex items-center gap-6">
+                                        ${isAdmin ? `<div class="drag-handle-list cursor-move text-zinc-700 p-2"><i class="fa-solid fa-grip-lines"></i></div>` : ''}
+                                        <div>
+                                            <h3 class="text-base font-medium">${item.name}</h3>
+                                            ${item.photo ? `<button onclick="showPhoto('${item.photo}', '${item.name}')" class="text-[10px] gold-text uppercase mt-1">查看實拍作品</button>` : ''}
+                                            ${isAdmin ? `<button onclick="uploadItemPhoto('${selectedCat.id}', ${item.id})" class="text-[9px] text-zinc-500 block mt-1 hover:text-gold">${item.photo ? '更換實拍圖' : '上傳實拍圖'}</button>` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-6 text-sm font-mono">
+                                        <span class="text-zinc-600 line-through">NT$ ${item.priceOrig.toLocaleString()}</span>
+                                        <span class="gold-text font-bold">NT$ ${item.priceDeal.toLocaleString()}</span>
+                                        <button onclick="contactFB('${item.name}')" class="border border-white/10 px-4 py-2 rounded text-[10px] hover:bg-gold hover:text-black transition">私訊領取連結</button>
+                                        ${isAdmin ? `
+                                            <button onclick="editItem('${selectedCat.id}', ${item.id})" class="text-zinc-500"><i class="fa-solid fa-pen"></i></button>
+                                            <button onclick="deleteItem('${selectedCat.id}', ${item.id})" class="text-red-800"><i class="fa-solid fa-trash"></i></button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${isAdmin ? `<button onclick="addItemPrompt('${selectedCat.id}')" class="w-full py-8 border border-dashed border-zinc-700 text-zinc-500 uppercase text-[10px] mt-4">+ 新增商品項目</button>` : ''}
+                    `;
+                }
+            } else {
+                titleSection.classList.add('hidden');
+                listContainer.classList.remove('active');
+            }
+            initSortable();
+        };
+
+        window.addCategory = async () => {
+            const name = document.getElementById('new-cat-name').value;
+            const fileInput = document.getElementById('new-cat-file');
+            let imgBase64 = "";
+
+            if(!name) { alert("請輸入名稱"); return; }
+            
+            if (fileInput.files && fileInput.files[0]) {
+                imgBase64 = await fileToBase64(fileInput.files[0]);
+            }
+
+            window.catalog.push({ 
+                id: 'cat_' + Date.now(), 
+                name, 
+                image: imgBase64 || "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=800", 
+                items: [] 
+            });
+            
+            document.getElementById('new-cat-name').value = '';
+            document.getElementById('new-cat-file').value = '';
+            document.getElementById('file-name-display').innerText = "尚未選擇檔案";
+            window.save();
+        };
+
+        window.editCategory = async (catId) => {
+            const cat = window.catalog.find(c => c.id === catId);
+            const newName = prompt("名稱：", cat.name);
+            if(newName) cat.name = newName;
+            
+            if(confirm("是否要更換封面圖片？")) {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if(file) {
+                        cat.image = await fileToBase64(file);
+                        window.save();
+                    }
+                };
+                input.click();
+            } else {
+                window.save();
+            }
+        };
+
+        window.deleteCategory = (catId) => {
+            if(confirm("確定刪除類別？")) {
+                window.catalog = window.catalog.filter(c => c.id !== catId);
+                window.save();
+            }
+        };
+
+        window.addItemPrompt = (catId) => {
+            const name = prompt("商品名稱：");
+            if(!name) return;
+            const cat = window.catalog.find(c => c.id === catId);
+            const orig = parseInt(prompt("原價：", "0")) || 0;
+            const deal = parseInt(prompt("優惠價：", "0")) || 0;
+            cat.items.push({ id: Date.now(), name, priceOrig: orig, priceDeal: deal, photo: "" });
+            window.save();
+        };
+
+        window.uploadItemPhoto = (catId, itemId) => {
+            const input = document.getElementById('item-file-input');
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if(file) {
+                    const base64 = await fileToBase64(file);
+                    const cat = window.catalog.find(c => c.id === catId);
+                    const item = cat.items.find(i => i.id === itemId);
+                    item.photo = base64;
+                    window.save();
+                }
+            };
+            input.click();
+        };
+
+        window.editItem = (catId, itemId) => {
+            const cat = window.catalog.find(c => c.id === catId);
+            const item = cat.items.find(i => i.id === itemId);
+            const newName = prompt("編輯名稱：", item.name);
+            const newOrig = parseInt(prompt("編輯原價：", item.priceOrig)) || 0;
+            const newDeal = parseInt(prompt("編輯優惠價：", item.priceDeal)) || 0;
+            if(newName) item.name = newName;
+            item.priceOrig = newOrig;
+            item.priceDeal = newDeal;
+            window.save();
+        };
+
+        window.deleteItem = (catId, itemId) => {
+            if(confirm("確定刪除商品？")) {
+                const cat = window.catalog.find(c => c.id === catId);
+                cat.items = cat.items.filter(i => i.id !== itemId);
+                window.save();
+            }
+        };
+
+        window.showPhoto = (url, name) => {
+            document.getElementById('modal-img').src = url;
+            document.getElementById('modal-caption').innerText = `作品實拍 / ${name}`;
+            document.getElementById('photo-modal').classList.add('active');
+        };
+
+        window.closeModal = () => document.getElementById('photo-modal').classList.remove('active');
+        window.contactFB = (name) => window.open(`https://m.me/chaoting67`, '_blank');
+        
+    </script>
+</body>
+</html>
