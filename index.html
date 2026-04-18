@@ -11,10 +11,9 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 
-        // Firebase 設定與環境變數處理
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
         };
@@ -24,10 +23,10 @@
         const auth = getAuth(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'chao-ting-pro-selects';
 
-        // 初始化與同步功能
+        // 初始化流程：先驗證身分，再讀取資料
         const init = async () => {
             try {
-                // 優先使用自定義 Token
+                // 1. 身份驗證 (遵守規則 3)
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
@@ -36,13 +35,15 @@
 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        // 建立 Firestore 監聽器，確保資料即時更新且重新整理後存在
+                        console.log("驗證成功，UID:", user.uid);
+                        // 2. 訂閱雲端資料 (遵守規則 1 路徑規範)
                         const docRef = doc(db, 'artifacts', appId, 'public', 'main_data');
                         onSnapshot(docRef, (docSnap) => {
                             if (docSnap.exists()) {
                                 window.catalog = docSnap.data().catalog || [];
+                                console.log("資料已同步");
                             } else {
-                                // 如果雲端沒資料，才載入預設值
+                                console.log("雲端無資料，載入預設值");
                                 window.catalog = window.defaultData;
                                 window.save(false); 
                             }
@@ -53,22 +54,25 @@
                     }
                 });
             } catch (e) { 
-                console.error("Firebase 認證失敗", e); 
+                console.error("Firebase 初始化失敗", e); 
             }
         };
 
-        // 儲存至雲端的統一函式
+        // 儲存函式 (遵守規則 1 & 3)
         window.save = async (shouldRender = true) => {
-            if (!auth.currentUser) return;
+            if (!auth.currentUser) {
+                console.error("未驗證，無法儲存");
+                return;
+            }
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'main_data');
-                // 將目前記憶體中的 catalog 同步到 Firestore
-                await setDoc(docRef, { catalog: window.catalog });
+                await setDoc(docRef, { 
+                    catalog: window.catalog,
+                    lastUpdated: new Date().getTime()
+                });
                 if (shouldRender) window.render();
             } catch (e) {
                 console.error("儲存失敗:", e);
-                // 由於 Firestore 文件有 1MB 限制，若 Base64 圖片過多會報錯
-                alert("儲存失敗！可能是因為圖片檔案過大或過多。建議先壓縮圖片再上傳。");
             }
         };
 
@@ -202,6 +206,12 @@
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: var(--bg-dark); }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+
+        /* 密碼模態視窗 */
+        #auth-modal {
+            background: rgba(0,0,0,0.9);
+            z-index: 999;
+        }
     </style>
 </head>
 <body class="pb-20">
@@ -209,9 +219,14 @@
     <!-- 管理員控制列 -->
     <div id="admin-bar" class="sticky top-0 z-50 bg-zinc-900 border-b border-white/5 py-1 px-4 text-[10px] flex justify-between items-center">
         <span class="text-gray-500 uppercase tracking-widest">Client Preview Mode</span>
-        <button onclick="toggleAdmin()" id="admin-btn" class="hover:text-white transition">
-            <i class="fa-solid fa-gears mr-1"></i> 切換後台管理
-        </button>
+        <div class="flex gap-4">
+            <button onclick="toggleAdmin()" id="admin-btn" class="hover:text-white transition">
+                <i class="fa-solid fa-gears mr-1"></i> 管理後台
+            </button>
+            <button id="logout-btn" onclick="logoutAdmin()" class="hidden text-red-500 hover:text-red-400">
+                <i class="fa-solid fa-right-from-bracket mr-1"></i> 登出
+            </button>
+        </div>
     </div>
 
     <!-- 標題 Header -->
@@ -277,11 +292,22 @@
         </div>
     </div>
 
-    <!-- 隱藏的檔案選擇器 (用於編輯項目) -->
+    <!-- 密碼輸入彈窗 -->
+    <div id="auth-modal" class="modal">
+        <div class="bg-zinc-900 p-8 rounded-lg border border-gold w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 class="text-gold text-xl mb-6 text-center font-bold tracking-widest">後台身份驗證</h3>
+            <input id="admin-password" type="password" placeholder="輸入管理密碼" class="w-full bg-black border border-zinc-800 p-3 rounded mb-4 text-center outline-none focus:border-gold">
+            <div class="flex gap-2">
+                <button onclick="verifyPassword()" class="flex-1 bg-gold text-black font-bold py-2 rounded">登入</button>
+                <button onclick="closeAuthModal()" class="flex-1 border border-zinc-700 py-2 rounded">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 隱藏的檔案選擇器 -->
     <input type="file" id="item-file-input" class="hidden" accept="image/*">
 
     <script>
-        // 預設資料，僅供雲端完全沒資料時參考
         window.defaultData = [
             {
                 id: "cat_camera",
@@ -299,7 +325,49 @@
         let gridSortable = null;
         let listSortable = null;
 
-        // 圖片處理：Base64 轉換
+        // 密碼邏輯 (預設: 6767，您可以自行修改)
+        const ADMIN_PASS = "6767";
+
+        window.toggleAdmin = () => {
+            if (isAdmin) {
+                // 已是管理員則關閉編輯模式 (登出另外處理)
+                isAdmin = false;
+                applyAdminUI();
+            } else {
+                document.getElementById('auth-modal').classList.add('active');
+                setTimeout(() => document.getElementById('admin-password').focus(), 200);
+            }
+        };
+
+        window.verifyPassword = () => {
+            const pwd = document.getElementById('admin-password').value;
+            if (pwd === ADMIN_PASS) {
+                isAdmin = true;
+                document.getElementById('admin-password').value = "";
+                closeAuthModal();
+                applyAdminUI();
+            } else {
+                alert("密碼錯誤");
+            }
+        };
+
+        window.closeAuthModal = () => document.getElementById('auth-modal').classList.remove('active');
+
+        function logoutAdmin() {
+            isAdmin = false;
+            applyAdminUI();
+        }
+
+        function applyAdminUI() {
+            document.getElementById('admin-ui').classList.toggle('hidden', !isAdmin);
+            document.getElementById('logout-btn').classList.toggle('hidden', !isAdmin);
+            document.getElementById('admin-bar').style.background = isAdmin ? '#450a0a' : '#18181b';
+            document.getElementById('admin-btn').innerHTML = isAdmin 
+                ? '<i class="fa-solid fa-check mr-1"></i> 完成編輯' 
+                : '<i class="fa-solid fa-gears mr-1"></i> 管理後台';
+            window.render();
+        }
+
         const fileToBase64 = (file) => new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
@@ -307,21 +375,9 @@
             reader.onerror = error => reject(error);
         });
 
-        // 管理介面監聽
-        document.getElementById('new-cat-file')?.addEventListener('change', function(e) {
-            const fileName = e.target.files[0]?.name || "尚未選擇檔案";
-            document.getElementById('file-name-display').innerText = fileName;
+        document.getElementById('new-cat-file')?.addEventListener('change', (e) => {
+            document.getElementById('file-name-display').innerText = e.target.files[0]?.name || "尚未選擇檔案";
         });
-
-        window.toggleAdmin = () => {
-            isAdmin = !isAdmin;
-            document.getElementById('admin-ui').classList.toggle('hidden', !isAdmin);
-            document.getElementById('admin-bar').classList.toggle('bg-red-900', isAdmin);
-            document.getElementById('admin-btn').innerHTML = isAdmin 
-                ? '<i class="fa-solid fa-check mr-1"></i> 完成並儲存' 
-                : '<i class="fa-solid fa-gears mr-1"></i> 切換後台管理';
-            window.render();
-        };
 
         window.selectCategory = (catId) => {
             activeCategoryId = (activeCategoryId === catId) ? null : catId;
@@ -333,7 +389,6 @@
             }
         };
 
-        // 拖拽排序功能
         function initSortable() {
             if (gridSortable) gridSortable.destroy();
             if (listSortable) listSortable.destroy();
@@ -343,10 +398,10 @@
             gridSortable = new Sortable(gridEl, {
                 animation: 250,
                 handle: '.drag-handle',
-                onEnd: function (evt) {
-                    const movedItem = window.catalog.splice(evt.oldIndex, 1)[0];
-                    window.catalog.splice(evt.newIndex, 0, movedItem);
-                    window.save(false); // 拖完自動存雲端
+                onEnd: () => {
+                    const ids = Array.from(gridEl.querySelectorAll('.category-grid-item')).map(el => el.dataset.id);
+                    window.catalog.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+                    window.save(false);
                 }
             });
 
@@ -355,11 +410,12 @@
                 listSortable = new Sortable(listEl, {
                     animation: 200,
                     handle: '.drag-handle-list',
-                    onEnd: function (evt) {
+                    onEnd: () => {
                         const cat = window.catalog.find(c => c.id === activeCategoryId);
                         if (cat) {
-                            const movedItem = cat.items.splice(evt.oldIndex, 1)[0];
-                            cat.items.splice(evt.newIndex, 0, movedItem);
+                            // 這裡透過 DOM 順序重新排列記憶體中的資料
+                            const itemNames = Array.from(listEl.querySelectorAll('h3')).map(h => h.innerText);
+                            cat.items.sort((a, b) => itemNames.indexOf(a.name) - itemNames.indexOf(b.name));
                             window.save(false);
                         }
                     }
@@ -367,7 +423,6 @@
             }
         }
 
-        // 核心渲染畫面函式
         window.render = () => {
             const grid = document.getElementById('category-grid');
             const listContainer = document.getElementById('items-container');
@@ -430,14 +485,12 @@
             initSortable();
         };
 
-        // 操作：新增類別
         window.addCategory = async () => {
             const name = document.getElementById('new-cat-name').value;
             const fileInput = document.getElementById('new-cat-file');
             let imgBase64 = "";
 
             if(!name) { alert("請輸入名稱"); return; }
-            
             if (fileInput.files && fileInput.files[0]) {
                 imgBase64 = await fileToBase64(fileInput.files[0]);
             }
@@ -455,7 +508,6 @@
             window.save();
         };
 
-        // 操作：編輯類別
         window.editCategory = async (catId) => {
             const cat = window.catalog.find(c => c.id === catId);
             const newName = prompt("名稱：", cat.name);
@@ -466,9 +518,8 @@
                 input.type = 'file';
                 input.accept = 'image/*';
                 input.onchange = async (e) => {
-                    const file = e.target.files[0];
-                    if(file) {
-                        cat.image = await fileToBase64(file);
+                    if(e.target.files[0]) {
+                        cat.image = await fileToBase64(e.target.files[0]);
                         window.save();
                     }
                 };
@@ -478,16 +529,14 @@
             }
         };
 
-        // 操作：刪除類別
         window.deleteCategory = (catId) => {
-            if(confirm("確定刪除類別？這會連同裡面的商品一起刪除。")) {
+            if(confirm("確定刪除類別？")) {
                 window.catalog = window.catalog.filter(c => c.id !== catId);
                 if (activeCategoryId === catId) activeCategoryId = null;
                 window.save();
             }
         };
 
-        // 商品細項操作
         window.addItemPrompt = (catId) => {
             const name = prompt("商品名稱：");
             if(!name) return;
@@ -501,9 +550,8 @@
         window.uploadItemPhoto = (catId, itemId) => {
             const input = document.getElementById('item-file-input');
             input.onchange = async (e) => {
-                const file = e.target.files[0];
-                if(file) {
-                    const base64 = await fileToBase64(file);
+                if(e.target.files[0]) {
+                    const base64 = await fileToBase64(e.target.files[0]);
                     const cat = window.catalog.find(c => c.id === catId);
                     const item = cat.items.find(i => i.id === itemId);
                     item.photo = base64;
@@ -533,7 +581,6 @@
             }
         };
 
-        // 彈窗與跳轉
         window.showPhoto = (url, name) => {
             document.getElementById('modal-img').src = url;
             document.getElementById('modal-caption').innerText = `作品實拍 / ${name}`;
