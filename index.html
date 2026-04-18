@@ -46,14 +46,15 @@
         };
 
         window.save = async (shouldRender = true) => {
-            if (!auth.currentUser) return;
+            // 安全檢查：非管理員不允許儲存
+            if (!auth.currentUser || !window.isAdmin) return;
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'main_data');
                 await setDoc(docRef, { catalog: window.catalog });
                 if (shouldRender) window.render();
             } catch (e) {
                 console.error("Save Error:", e);
-                alert("儲存失敗，可能是圖片檔案太大（建議壓縮後再上傳）。");
+                alert("儲存失敗，可能是圖片檔案太大或權限不足。");
             }
         };
 
@@ -193,9 +194,9 @@
 
     <!-- 管理員控制列 -->
     <div id="admin-bar" class="sticky top-0 z-50 bg-zinc-900 border-b border-white/5 py-1 px-4 text-[10px] flex justify-between items-center">
-        <span class="text-gray-500 uppercase tracking-widest">Client Preview Mode</span>
+        <span id="mode-text" class="text-gray-500 uppercase tracking-widest">Client Preview Mode</span>
         <button onclick="toggleAdmin()" id="admin-btn" class="hover:text-white transition">
-            <i class="fa-solid fa-gears mr-1"></i> 切換後台管理
+            <i class="fa-solid fa-lock mr-1"></i> 管理員登入
         </button>
     </div>
 
@@ -227,10 +228,10 @@
         </div>
     </main>
 
-    <!-- 後台新增類別區 -->
+    <!-- 後台新增類別區 (僅管理員可見) -->
     <section id="admin-ui" class="max-w-5xl mx-auto px-6 mt-20 hidden">
         <div class="admin-section p-8 rounded-lg">
-            <h2 class="text-lg font-bold mb-4 gold-text">後台系統：新增品項類別</h2>
+            <h2 class="text-lg font-bold mb-4 gold-text">後台管理：新增品項類別</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <input id="new-cat-name" type="text" placeholder="類別名稱 (如：鏡頭)" class="bg-black border border-zinc-800 p-3 rounded outline-none focus:border-gold">
                 <div class="flex flex-col gap-2">
@@ -242,6 +243,7 @@
                 </div>
             </div>
             <button onclick="addCategory()" class="bg-gold text-black w-full py-3 rounded font-bold uppercase tracking-widest hover:bg-yellow-400 transition">建立類別</button>
+            <button onclick="logoutAdmin()" class="mt-4 text-zinc-600 text-[10px] w-full text-center hover:text-red-500 transition">登出管理模式</button>
         </div>
     </section>
 
@@ -266,6 +268,9 @@
     <input type="file" id="item-file-input" class="hidden" accept="image/*">
 
     <script>
+        // 設定你的專屬管理金鑰
+        const ADMIN_KEY = "chao6789";
+
         window.defaultData = [
             {
                 id: "cat_camera",
@@ -278,12 +283,11 @@
         ];
 
         window.catalog = [];
-        let isAdmin = false;
+        window.isAdmin = false;
         let activeCategoryId = null;
         let gridSortable = null;
         let listSortable = null;
 
-        // 輔助函式：將圖片檔案轉為 Base64
         const fileToBase64 = (file) => new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
@@ -291,19 +295,37 @@
             reader.onerror = error => reject(error);
         });
 
-        // 監聽新增類別的檔案選擇
         document.getElementById('new-cat-file')?.addEventListener('change', function(e) {
             const fileName = e.target.files[0]?.name || "尚未選擇檔案";
             document.getElementById('file-name-display').innerText = fileName;
         });
 
         window.toggleAdmin = () => {
-            isAdmin = !isAdmin;
-            document.getElementById('admin-ui').classList.toggle('hidden', !isAdmin);
-            document.getElementById('admin-bar').classList.toggle('bg-red-900', isAdmin);
-            document.getElementById('admin-btn').innerHTML = isAdmin 
-                ? '<i class="fa-solid fa-check mr-1"></i> 完成並儲存' 
-                : '<i class="fa-solid fa-gears mr-1"></i> 切換後台管理';
+            if (!window.isAdmin) {
+                const pass = prompt("請輸入管理員金鑰：");
+                if (pass === ADMIN_KEY) {
+                    window.isAdmin = true;
+                    document.getElementById('admin-ui').classList.remove('hidden');
+                    document.getElementById('admin-bar').classList.add('bg-red-900');
+                    document.getElementById('mode-text').innerText = "Admin Management Mode";
+                    document.getElementById('admin-btn').innerHTML = '<i class="fa-solid fa-unlock mr-1"></i> 編輯中...';
+                    window.render();
+                } else if (pass !== null) {
+                    alert("金鑰錯誤！");
+                }
+            } else {
+                // 如果已經是管理員，再次點擊視為「完成編輯」
+                window.save();
+                alert("修改已同步至雲端。");
+            }
+        };
+
+        window.logoutAdmin = () => {
+            window.isAdmin = false;
+            document.getElementById('admin-ui').classList.add('hidden');
+            document.getElementById('admin-bar').classList.remove('bg-red-900');
+            document.getElementById('mode-text').innerText = "Client Preview Mode";
+            document.getElementById('admin-btn').innerHTML = '<i class="fa-solid fa-lock mr-1"></i> 管理員登入';
             window.render();
         };
 
@@ -320,7 +342,7 @@
         function initSortable() {
             if (gridSortable) gridSortable.destroy();
             if (listSortable) listSortable.destroy();
-            if (!isAdmin) return;
+            if (!window.isAdmin) return;
 
             const gridEl = document.getElementById('category-grid');
             gridSortable = new Sortable(gridEl, {
@@ -362,7 +384,7 @@
                         <span class="text-xs gold-text tracking-[0.4em] opacity-0 group-hover:opacity-100 transition-all mb-2">Explore</span>
                         <h3 class="text-xl font-bold tracking-widest uppercase">${cat.name}</h3>
                     </div>
-                    ${isAdmin ? `
+                    ${window.isAdmin ? `
                         <div class="drag-handle absolute top-4 left-4 z-10 bg-black/50 p-2 rounded text-white"><i class="fa-solid fa-grip-vertical"></i></div>
                         <div class="absolute bottom-4 right-4 z-10 flex gap-2">
                             <button onclick="event.stopPropagation(); editCategory('${cat.id}')" class="text-[10px] bg-zinc-800 px-2 py-1 rounded">EDIT</button>
@@ -383,18 +405,18 @@
                             ${selectedCat.items.map(item => `
                                 <div class="list-item py-6 flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
                                     <div class="flex items-center gap-6">
-                                        ${isAdmin ? `<div class="drag-handle-list cursor-move text-zinc-700 p-2"><i class="fa-solid fa-grip-lines"></i></div>` : ''}
+                                        ${window.isAdmin ? `<div class="drag-handle-list cursor-move text-zinc-700 p-2"><i class="fa-solid fa-grip-lines"></i></div>` : ''}
                                         <div>
                                             <h3 class="text-base font-medium">${item.name}</h3>
                                             ${item.photo ? `<button onclick="showPhoto('${item.photo}', '${item.name}')" class="text-[10px] gold-text uppercase mt-1">查看實拍作品</button>` : ''}
-                                            ${isAdmin ? `<button onclick="uploadItemPhoto('${selectedCat.id}', ${item.id})" class="text-[9px] text-zinc-500 block mt-1 hover:text-gold">${item.photo ? '更換實拍圖' : '上傳實拍圖'}</button>` : ''}
+                                            ${window.isAdmin ? `<button onclick="uploadItemPhoto('${selectedCat.id}', ${item.id})" class="text-[9px] text-zinc-500 block mt-1 hover:text-gold">${item.photo ? '更換實拍圖' : '上傳實拍圖'}</button>` : ''}
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-6 text-sm font-mono">
                                         <span class="text-zinc-600 line-through">NT$ ${item.priceOrig.toLocaleString()}</span>
                                         <span class="gold-text font-bold">NT$ ${item.priceDeal.toLocaleString()}</span>
                                         <button onclick="contactFB('${item.name}')" class="border border-white/10 px-4 py-2 rounded text-[10px] hover:bg-gold hover:text-black transition">私訊領取連結</button>
-                                        ${isAdmin ? `
+                                        ${window.isAdmin ? `
                                             <button onclick="editItem('${selectedCat.id}', ${item.id})" class="text-zinc-500"><i class="fa-solid fa-pen"></i></button>
                                             <button onclick="deleteItem('${selectedCat.id}', ${item.id})" class="text-red-800"><i class="fa-solid fa-trash"></i></button>
                                         ` : ''}
@@ -402,7 +424,7 @@
                                 </div>
                             `).join('')}
                         </div>
-                        ${isAdmin ? `<button onclick="addItemPrompt('${selectedCat.id}')" class="w-full py-8 border border-dashed border-zinc-700 text-zinc-500 uppercase text-[10px] mt-4">+ 新增商品項目</button>` : ''}
+                        ${window.isAdmin ? `<button onclick="addItemPrompt('${selectedCat.id}')" class="w-full py-8 border border-dashed border-zinc-700 text-zinc-500 uppercase text-[10px] mt-4">+ 新增商品項目</button>` : ''}
                     `;
                 }
             } else {
@@ -413,6 +435,7 @@
         };
 
         window.addCategory = async () => {
+            if (!window.isAdmin) return;
             const name = document.getElementById('new-cat-name').value;
             const fileInput = document.getElementById('new-cat-file');
             let imgBase64 = "";
@@ -437,6 +460,7 @@
         };
 
         window.editCategory = async (catId) => {
+            if (!window.isAdmin) return;
             const cat = window.catalog.find(c => c.id === catId);
             const newName = prompt("名稱：", cat.name);
             if(newName) cat.name = newName;
@@ -459,6 +483,7 @@
         };
 
         window.deleteCategory = (catId) => {
+            if (!window.isAdmin) return;
             if(confirm("確定刪除類別？")) {
                 window.catalog = window.catalog.filter(c => c.id !== catId);
                 window.save();
@@ -466,6 +491,7 @@
         };
 
         window.addItemPrompt = (catId) => {
+            if (!window.isAdmin) return;
             const name = prompt("商品名稱：");
             if(!name) return;
             const cat = window.catalog.find(c => c.id === catId);
@@ -476,6 +502,7 @@
         };
 
         window.uploadItemPhoto = (catId, itemId) => {
+            if (!window.isAdmin) return;
             const input = document.getElementById('item-file-input');
             input.onchange = async (e) => {
                 const file = e.target.files[0];
@@ -491,6 +518,7 @@
         };
 
         window.editItem = (catId, itemId) => {
+            if (!window.isAdmin) return;
             const cat = window.catalog.find(c => c.id === catId);
             const item = cat.items.find(i => i.id === itemId);
             const newName = prompt("編輯名稱：", item.name);
@@ -503,6 +531,7 @@
         };
 
         window.deleteItem = (catId, itemId) => {
+            if (!window.isAdmin) return;
             if(confirm("確定刪除商品？")) {
                 const cat = window.catalog.find(c => c.id === catId);
                 cat.items = cat.items.filter(i => i.id !== itemId);
